@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Lume | Substance Over Style</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root { --primary: #ffffff; }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: #000; 
+            color: #fff; 
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .serif { font-family: 'Playfair Display', serif; }
+
+        /* Tinder-style Stack */
+        .card-container {
+            position: relative;
+            flex-grow: 1;
+            margin: 10px 15px 20px 15px;
+            perspective: 1000px;
+        }
+        .noir-card { 
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: #0a0a0a; 
+            border: 1px solid #1a1a1a; 
+            border-radius: 24px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        /* Gradient overlay for text readability */
+        .card-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 60%;
+            background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.4) 50%, transparent 100%);
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+        }
+
+        /* Bottom App Bar */
+        .bottom-nav {
+            background: #000;
+            height: 70px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            border-top: 1px solid #111;
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        .nav-item { color: #333; transition: 0.3s; font-size: 1.2rem; }
+        .nav-item.active { color: #fff; }
+
+        /* Tinder Action Bar */
+        .action-bar {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            padding-bottom: 20px;
+        }
+        .action-btn {
+            width: 55px;
+            height: 55px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #0a0a0a;
+            border: 1px solid #1a1a1a;
+            transition: transform 0.1s ease;
+            cursor: pointer;
+        }
+        .action-btn:active { transform: scale(0.85); }
+        .btn-large { width: 65px; height: 65px; font-size: 1.5rem; }
+
+        .btn-x { color: #ff4444; }
+        .btn-heart { color: #00ffa3; }
+        .btn-star { color: #3ab4ff; width: 45px; height: 45px; }
+
+        .input-noir {
+            background: transparent;
+            border-bottom: 1px solid #222;
+            padding: 14px 0;
+            width: 100%;
+            outline: none;
+            font-size: 0.85rem;
+            color: #fff;
+        }
+
+        .loader { border-top-color: #fff; animation: spinner 0.6s linear infinite; }
+        @keyframes spinner { to { transform: rotate(360deg); } }
+
+        .fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        #view-container { height: 100%; display: flex; flex-direction: column; }
+    </style>
+</head>
+<body>
+
+    <header id="top-bar" class="hidden px-6 pt-4 flex justify-between items-center">
+        <button onclick="router('premium')" class="text-zinc-500"><i class="fas fa-user-circle text-2xl"></i></button>
+        <div class="flex items-center gap-1">
+            <span class="serif font-bold text-xl tracking-tighter uppercase">Lume</span>
+        </div>
+        <button onclick="router('matches')" class="text-zinc-500"><i class="fas fa-comment-dots text-2xl"></i></button>
+    </header>
+
+    <main id="view-container" class="flex-grow"></main>
+
+    <div id="custom-modal" class="hidden fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/95">
+        <div class="bg-zinc-900 p-8 rounded-3xl max-w-sm w-full space-y-6 text-center">
+            <h3 class="serif text-xl italic">Notice</h3>
+            <p id="modal-text" class="text-xs text-zinc-400 leading-relaxed"></p>
+            <button onclick="closeModal()" class="w-full bg-white text-black py-4 rounded-full text-[10px] font-bold uppercase">Dismiss</button>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "https://script.google.com/macros/s/AKfycbwnkV8D9nYS4NwvvJCHP8jp2Y9Y4KwJhqYOgBV_0Hs5UBLNB7kjkFoqG0i9cdBXDW_B/exec"; 
+
+        let currentUser = JSON.parse(localStorage.getItem('lume_user'));
+        let isLoginView = true;
+        let chatInterval = null;
+
+        function showModal(text) {
+            document.getElementById('modal-text').innerText = text;
+            document.getElementById('custom-modal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('custom-modal').classList.add('hidden');
+        }
+
+        async function init() {
+            if (currentUser) router('discover');
+            else router('login');
+        }
+
+        function router(view, params = {}) {
+            if (chatInterval) clearInterval(chatInterval);
+            const container = document.getElementById('view-container');
+            const topBar = document.getElementById('top-bar');
+
+            const isAuth = view === 'login';
+            topBar.classList.toggle('hidden', isAuth);
+
+            if (isExpired() && !['premium', 'login'].includes(view)) {
+                container.innerHTML = renderExpiredLock();
+                return;
+            }
+
+            switch(view) {
+                case 'login': container.innerHTML = renderAuthForm(); break;
+                case 'discover': renderDiscover(); break;
+                case 'matches': renderMatches(); break;
+                case 'chat': renderChat(params.roomId, params.otherName); break;
+                case 'premium': container.innerHTML = renderPremium(); break;
+            }
+        }
+
+        function isExpired() {
+            if (!currentUser || currentUser.tier !== 'Free') return false;
+            const signup = new Date(currentUser.timestamp);
+            return (new Date() - signup) > (24 * 60 * 60 * 1000);
+        }
+
+        // --- AUTH ---
+        function toggleAuthMode() { isLoginView = !isLoginView; router('login'); }
+
+        function renderAuthForm() {
+            return `
+                <div class="w-full max-w-sm mx-auto flex-grow flex flex-col justify-center px-8 space-y-12 fade-in">
+                    <div class="text-center space-y-2">
+                        <h1 class="serif text-6xl font-light">Lume</h1>
+                        <p class="text-zinc-600 tracking-[0.5em] text-[8px] uppercase">Identity & Essence</p>
+                    </div>
+                    <div class="space-y-4">
+                        ${!isLoginView ? `
+                            <input id="a-email" type="email" placeholder="Email" class="input-noir">
+                            <input id="a-user" type="text" placeholder="Username" class="input-noir">
+                        ` : `
+                            <input id="a-id" type="text" placeholder="Username or Email" class="input-noir">
+                        `}
+                        <input id="a-pw" type="password" placeholder="Password" class="input-noir">
+                        ${!isLoginView ? `<textarea id="a-bio" placeholder="Your essence (This is what others see first)..." class="w-full bg-zinc-900/40 rounded-2xl p-4 text-xs h-24 outline-none border border-zinc-900 mt-4"></textarea>` : ''}
+                        
+                        <button onclick="handleAuth()" id="a-btn" class="w-full bg-white text-black py-5 rounded-full font-bold text-[10px] tracking-widest uppercase mt-6">
+                            ${isLoginView ? 'Login' : 'Begin Journey'}
+                        </button>
+                    </div>
+                    <button onclick="toggleAuthMode()" class="text-zinc-600 text-[9px] uppercase tracking-widest text-center">
+                        ${isLoginView ? 'Create Account' : 'Back to Login'}
+                    </button>
+                </div>`;
+        }
+
+        async function handleAuth() {
+            const btn = document.getElementById('a-btn');
+            btn.innerHTML = `<div class="loader w-4 h-4 border-2 rounded-full mx-auto"></div>`;
+            const payload = isLoginView ? {
+                action: 'login', identity: document.getElementById('a-id').value, password: document.getElementById('a-pw').value
+            } : {
+                action: 'signup', email: document.getElementById('a-email').value, username: document.getElementById('a-user').value,
+                password: document.getElementById('a-pw').value, bio: document.getElementById('a-bio').value
+            };
+            try {
+                const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
+                const data = await res.json();
+                if (data.success || data.uid) {
+                    if(!isLoginView) { showModal("Account created."); isLoginView = true; router('login'); }
+                    else { localStorage.setItem('lume_user', JSON.stringify(data)); currentUser = data; router('discover'); }
+                } else { showModal(data.message || "Failed."); btn.innerHTML = 'Retry'; }
+            } catch(e) { showModal("Network Error."); btn.innerHTML = 'Retry'; }
+        }
+
+        // --- DISCOVER (TINDER STYLE) ---
+        async function renderDiscover() {
+            const container = document.getElementById('view-container');
+            container.innerHTML = `<div class="flex-grow flex items-center justify-center"><div class="loader w-6 h-6 border-2 rounded-full"></div></div>`;
+            const res = await fetch(`${API_URL}?action=getProfiles`);
+            const profiles = await res.json();
+            const others = profiles.filter(p => p.uid !== currentUser.uid);
+
+            if(others.length === 0) {
+                container.innerHTML = `<div class="flex-grow flex flex-col items-center justify-center p-10 text-center"><p class="text-[10px] uppercase tracking-widest text-zinc-600">No one new in your area.</p></div>`;
+                return;
+            }
+
+            const p = others[0];
+            container.innerHTML = `
+                <div class="card-container fade-in">
+                    <div class="noir-card">
+                        <div class="flex-grow flex items-center justify-center p-12 bg-zinc-900/20">
+                             <p class="serif text-3xl italic text-center leading-snug">"${p.bio}"</p>
+                        </div>
+                        <div class="card-overlay">
+                            <h2 class="text-2xl font-bold">${p.username}, <span class="font-light">Soul</span></h2>
+                            <p class="text-xs text-zinc-400 mt-1 uppercase tracking-tighter"><i class="fas fa-location-dot mr-1"></i> Recently Active</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="action-bar">
+                    <button onclick="router('discover')" class="action-btn btn-x"><i class="fas fa-times"></i></button>
+                    <button class="action-btn btn-star"><i class="fas fa-star"></i></button>
+                    <button onclick="connect('${p.uid}')" class="action-btn btn-large btn-heart"><i class="fas fa-heart"></i></button>
+                </div>
+            `;
+        }
+
+        // --- FRIENDS ---
+        async function renderMatches() {
+            const container = document.getElementById('view-container');
+            container.innerHTML = `
+                <div class="px-6 pt-4">
+                    <div class="flex items-center gap-4 mb-8">
+                        <button onclick="router('discover')" class="text-zinc-500"><i class="fas fa-arrow-left"></i></button>
+                        <h2 class="serif text-2xl">Messages</h2>
+                    </div>
+                    <div id="matches-list" class="space-y-2">
+                        <div class="flex justify-center py-10"><div class="loader w-4 h-4 border-2 rounded-full"></div></div>
+                    </div>
+                </div>`;
+
+            const res = await fetch(`${API_URL}?action=getConnections&uid=${currentUser.uid}`);
+            const matches = await res.json();
+            const list = document.getElementById('matches-list');
+
+            list.innerHTML = matches.length ? matches.map(m => {
+                const otherUid = m.user_1 === currentUser.uid ? m.user_2 : m.user_1;
+                const otherName = "Soul " + otherUid.substring(0,4);
+                return `
+                    <div onclick="router('chat', {roomId: '${m.match_id}', otherName: '${otherName}'})" class="flex items-center gap-4 p-4 hover:bg-zinc-900 rounded-2xl transition-colors cursor-pointer">
+                        <div class="w-14 h-14 bg-gradient-to-tr from-zinc-800 to-zinc-950 rounded-full flex items-center justify-center border border-zinc-800">
+                            <i class="fas fa-user text-zinc-600"></i>
+                        </div>
+                        <div class="flex-grow border-b border-zinc-900 pb-2">
+                            <div class="flex justify-between items-center">
+                                <p class="font-bold text-sm">${otherName}</p>
+                                <span class="text-[9px] text-zinc-600">NEW MATCH</span>
+                            </div>
+                            <p class="text-xs text-zinc-500 truncate mt-1">Tap to start a deep conversation...</p>
+                        </div>
+                    </div>`;
+            }).join('') : `<p class="text-center text-zinc-700 text-xs py-20">No matches yet. Keep swiping.</p>`;
+        }
+
+        // --- CHAT ---
+        async function renderChat(roomId, otherName) {
+            const container = document.getElementById('view-container');
+            container.innerHTML = `
+                <div class="flex flex-col h-full bg-black fade-in">
+                    <div class="flex items-center gap-4 px-6 py-4 border-b border-zinc-900">
+                        <button onclick="router('matches')"><i class="fas fa-chevron-left text-zinc-500"></i></button>
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 bg-zinc-800 rounded-full"></div>
+                            <span class="text-sm font-bold">${otherName}</span>
+                        </div>
+                    </div>
+                    <div id="chat-msgs" class="flex-grow overflow-y-auto p-6 space-y-4"></div>
+                    <div class="p-4 bg-black border-t border-zinc-900 flex gap-3 items-center">
+                        <input id="m-input" type="text" placeholder="Type a message..." class="flex-grow bg-zinc-900 rounded-full px-5 py-3 text-sm outline-none">
+                        <button onclick="sendMsg('${roomId}')" class="text-white px-2">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>`;
+
+            const fetchMsgs = async () => {
+                const r = await fetch(`${API_URL}?action=getMessages&room_id=${roomId}`);
+                const msgs = await r.json();
+                const box = document.getElementById('chat-msgs');
+                if(!box) return;
+                box.innerHTML = msgs.map(m => `
+                    <div class="max-w-[75%] px-4 py-2 text-sm ${m.sender_id === currentUser.uid ? 'bg-zinc-100 text-black rounded-2xl rounded-tr-none self-end ml-auto' : 'bg-zinc-800 text-white rounded-2xl rounded-tl-none self-start'}">
+                        ${m.text}
+                    </div>
+                `).join('');
+                box.scrollTop = box.scrollHeight;
+            };
+            fetchMsgs();
+            chatInterval = setInterval(fetchMsgs, 5000);
+        }
+
+        async function sendMsg(roomId) {
+            const inp = document.getElementById('m-input');
+            const text = inp.value;
+            if(!text) return;
+            inp.value = '';
+            await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'sendMessage', room_id: roomId, sender_id: currentUser.uid, text: text }) });
+        }
+
+        function renderPremium() {
+            return `
+                <div class="px-8 pt-10 pb-20 fade-in overflow-y-auto">
+                    <button onclick="router('discover')" class="mb-6 text-zinc-500"><i class="fas fa-times text-xl"></i></button>
+                    <h2 class="serif text-4xl mb-2">Lume Gold</h2>
+                    <p class="text-zinc-500 text-xs mb-10 tracking-widest uppercase">Unlimit your potential</p>
+                    
+                    <div class="space-y-6">
+                        <div class="bg-zinc-900 p-8 rounded-3xl border border-zinc-800 relative overflow-hidden">
+                            <div class="flex justify-between items-start relative z-10">
+                                <div>
+                                    <h3 class="serif text-2xl">Lite</h3>
+                                    <p class="text-xs text-zinc-500 mt-2">Remove 24h timer</p>
+                                </div>
+                                <p class="text-xl font-bold">$10</p>
+                            </div>
+                            <button class="w-full bg-white text-black py-4 rounded-full font-bold text-[10px] uppercase mt-8 relative z-10">Upgrade</button>
+                        </div>
+
+                        <div class="bg-white/5 p-8 rounded-3xl border border-white/10">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h3 class="serif text-2xl">Elite</h3>
+                                    <p class="text-xs text-zinc-500 mt-2">The full experience</p>
+                                </div>
+                                <p class="text-xl font-bold">$50</p>
+                            </div>
+                            <button class="w-full bg-white text-black py-4 rounded-full font-bold text-[10px] uppercase mt-8">Go Elite</button>
+                        </div>
+                        
+                        <button onclick="logout()" class="w-full text-zinc-700 text-[10px] uppercase font-bold tracking-[0.3em] py-10">Sign Out</button>
+                    </div>
+                </div>`;
+        }
+
+        function renderExpiredLock() {
+            return `<div class="fixed inset-0 bg-black z-[100] flex items-center justify-center p-12 text-center">
+                <div class="space-y-6">
+                    <div class="w-20 h-20 bg-zinc-900 rounded-full flex items-center justify-center mx-auto mb-10">
+                        <i class="fas fa-lock text-3xl text-white"></i>
+                    </div>
+                    <h2 class="serif text-3xl italic">Daily Limit Reached</h2>
+                    <p class="text-zinc-500 text-xs leading-relaxed uppercase tracking-widest">Wait 24 hours or upgrade to continue your journey.</p>
+                    <button onclick="router('premium')" class="w-full bg-white text-black py-5 rounded-full text-[10px] font-black uppercase">View Plans</button>
+                </div>
+            </div>`;
+        }
+
+               function logout() { localStorage.removeItem('lume_user'); location.reload(); }
+
+        async function connect(targetUid) {
+            await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'connect', uid: currentUser.uid, target_uid: targetUid }) });
+            router('discover');
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
